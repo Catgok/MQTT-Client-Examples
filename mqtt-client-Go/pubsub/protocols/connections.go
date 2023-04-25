@@ -11,6 +11,38 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
+func reconnect(config Config, client mqtt.Client, options *mqtt.ClientOptions) {
+	go func() {
+		for !Exit {
+			if !client.IsConnectionOpen() {
+				fmt.Println("Disconnected from broker. Trying to reconnect...")
+				x, ma := 1, 60
+				for i := 1; i < 10; i++ {
+					log.Printf("Reconnecting in %ds.\n", x)
+					time.Sleep(time.Duration(x) * time.Second)
+
+					token := client.Connect()
+					for !token.WaitTimeout(100 * time.Millisecond) {
+					}
+					if err := token.Error(); err == nil && client.IsConnectionOpen() {
+						log.Println("Reconnected!")
+						break
+					}
+					x *= 2
+					if x > ma {
+						x = ma
+					}
+				}
+				if !client.IsConnectionOpen() {
+					log.Println("max try! Exit.")
+					Exit = true
+				}
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}()
+}
+
 func connectByMQTT(config Config) mqtt.Client {
 	opts := mqtt.NewClientOptions()
 	broker := fmt.Sprintf("tcp://%s:%d", config.Host, config.Port)
@@ -47,13 +79,18 @@ func connectByMQTTS(config Config) mqtt.Client {
 	opts.SetUsername(config.Username)
 	opts.SetPassword(config.Password)
 	opts.SetTLSConfig(&tlsConfig)
+
+	opts.SetKeepAlive(3 * time.Second)
+	opts.SetMaxReconnectInterval(3 * time.Second)
+
 	client := mqtt.NewClient(opts)
 	token := client.Connect()
-	for !token.WaitTimeout(3 * time.Second) {
+	for !token.WaitTimeout(100 * time.Millisecond) {
 	}
 	if err := token.Error(); err != nil {
 		log.Fatal(err)
 	}
+	reconnect(config, client, opts)
 	return client
 }
 
