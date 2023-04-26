@@ -11,5 +11,3 @@ type Config struct {
 	Tls      bool
 	CaCert   string
 }
-
-var Exit bool = false

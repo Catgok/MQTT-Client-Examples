@@ -11,36 +11,36 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
-func reconnect(config Config, client mqtt.Client, options *mqtt.ClientOptions) {
-	go func() {
-		for !Exit {
-			if !client.IsConnectionOpen() {
-				fmt.Println("Disconnected from broker. Trying to reconnect...")
-				x, ma := 1, 60
-				for i := 1; i < 10; i++ {
-					log.Printf("Reconnecting in %ds.\n", x)
-					time.Sleep(time.Duration(x) * time.Second)
+func SetAutoReconnect(config Config, opts *mqtt.ClientOptions) {
+	firstReconnectDelay, maxReconnectDelay, maxReconnectCount, reconnectRate := 1, 60, 12, 2
 
-					token := client.Connect()
-					for !token.WaitTimeout(100 * time.Millisecond) {
-					}
-					if err := token.Error(); err == nil && client.IsConnectionOpen() {
-						log.Println("Reconnected!")
-						break
-					}
-					x *= 2
-					if x > ma {
-						x = ma
-					}
-				}
-				if !client.IsConnectionOpen() {
-					log.Println("max try! Exit.")
-					Exit = true
-				}
+	opts.SetOnConnectHandler(func(client mqtt.Client) {
+		log.Println("Connected to MQTT Broker!")
+	})
+
+	opts.SetConnectionLostHandler(func(client mqtt.Client, err error) {
+		fmt.Printf("Connection lost: %v\nTrying to reconnect...\n", err)
+
+		reconnectDelay := firstReconnectDelay
+		for i := 0; i < maxReconnectCount; i++ {
+			log.Printf("Reconnecting in %ds.\n", reconnectDelay)
+			time.Sleep(time.Duration(reconnectDelay) * time.Second)
+			if token := client.Connect(); token.Wait() && token.Error() != nil {
+				log.Printf("Failed to reconnect: %v\n", token.Error())
+			} else if client.IsConnectionOpen() {
+				return
 			}
-			time.Sleep(100 * time.Millisecond)
+			if i != maxReconnectCount-1 {
+				log.Println("Reconnect failed, waiting for the next reconnection.")
+			}
+			reconnectDelay *= reconnectRate
+			if reconnectDelay > maxReconnectDelay {
+				reconnectDelay = maxReconnectDelay
+			}
 		}
-	}()
+		log.Printf("Reconnect failed after %d attempts. Exiting...", maxReconnectCount)
+		ExitFlag = !client.IsConnectionOpen()
+	})
 }
 
 func connectByMQTT(config Config) mqtt.Client {
@@ -49,6 +49,7 @@ func connectByMQTT(config Config) mqtt.Client {
 	opts.AddBroker(broker)
 	opts.SetUsername(config.Username)
 	opts.SetPassword(config.Password)
+	SetAutoReconnect(config, opts)
 	client := mqtt.NewClient(opts)
 	token := client.Connect()
 	for !token.WaitTimeout(3 * time.Second) {
@@ -79,10 +80,7 @@ func connectByMQTTS(config Config) mqtt.Client {
 	opts.SetUsername(config.Username)
 	opts.SetPassword(config.Password)
 	opts.SetTLSConfig(&tlsConfig)
-
-	opts.SetKeepAlive(3 * time.Second)
-	opts.SetMaxReconnectInterval(3 * time.Second)
-
+	SetAutoReconnect(config, opts)
 	client := mqtt.NewClient(opts)
 	token := client.Connect()
 	for !token.WaitTimeout(100 * time.Millisecond) {
@@ -90,7 +88,6 @@ func connectByMQTTS(config Config) mqtt.Client {
 	if err := token.Error(); err != nil {
 		log.Fatal(err)
 	}
-	reconnect(config, client, opts)
 	return client
 }
 
@@ -100,6 +97,7 @@ func connectByWS(config Config) mqtt.Client {
 	opts.AddBroker(broker)
 	opts.SetUsername(config.Username)
 	opts.SetPassword(config.Password)
+	SetAutoReconnect(config, opts)
 	client := mqtt.NewClient(opts)
 	token := client.Connect()
 	for !token.WaitTimeout(3 * time.Second) {
@@ -129,6 +127,7 @@ func connectByWSS(config Config) mqtt.Client {
 	opts.SetUsername(config.Username)
 	opts.SetPassword(config.Password)
 	opts.SetTLSConfig(&tlsConfig)
+	SetAutoReconnect(config, opts)
 	client := mqtt.NewClient(opts)
 	token := client.Connect()
 	for !token.WaitTimeout(3 * time.Second) {

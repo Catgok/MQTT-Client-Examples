@@ -20,12 +20,6 @@ var (
 )
 
 func main() {
-	*Host = "t8d7d88a.ala.cn-hangzhou.emqxsl.cn"
-	*Port = 8883
-	*Protocol = "mqtts"
-	*Tls = true
-	*CaCert = "./emqxsl-ca.crt"
-
 	flag.Parse()
 	config := protocols.Config{Host: *Host, Port: *Port, Action: *Action, Topic: *Topic, Username: *Username, Password: *Password, Qos: *Qos, Tls: *Tls, CaCert: *CaCert}
 	protocol := *Protocol
